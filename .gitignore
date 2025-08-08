@@ -5,3 +5,4 @@ results2/
 frames/
 __pycache__/
 original_plate_images
+*.pt
