@@ -1,100 +1,101 @@
-from typing import List
+import os
+import cv2
 import numpy as np
 import pandas as pd
-import cv2
+from ultralytics import YOLO
+from typing import List, Dict
 
-class SaveFramesPlates:
-    def __init__(self, path: str, frames: List[np.ndarray], plates: List[str]):
-        self.path = path
-        self.frames = frames
-        self.plates_OCR = plates
+class VehiclePlateProcessor:
+    def __init__(self, video_path: str, output_dir: str, vehicle_model_path: str, frame_interval: int = 5):
+        self.video_path = video_path
+        self.output_dir = output_dir
+        self.vehicle_model = YOLO(vehicle_model_path)
+        self.frame_interval = frame_interval
+        self.frame_count = 1
+        self.cut_frame_count = 1
+        self.data = []
 
-    def save_csv(self):
-        data = {
-            # 'video_name': self.path.split('/')[-1].split('.')[0],
-            'frame': [frame.tolist() for frame in self.frames],
-            'plate_OCR': self.plates_OCR
-        }
-        df = pd.DataFrame(data)
+        self.frames_dir = os.path.join(output_dir, "frames")
+        self.cuts_dir = os.path.join(output_dir, "cut_frame")
+        os.makedirs(self.frames_dir, exist_ok=True)
+        os.makedirs(self.cuts_dir, exist_ok=True)
 
-        df.to_csv(self.path, index=False)
+    def process_video(self):
+        cap = cv2.VideoCapture(self.video_path)
+        frame_id = 0
 
-    def detect_plates(self, video: str) -> List[np.ndarray]:
-        """
-        Detect plates in video using Plate Recognition model. openALPR
-
-        Args:
-            video (str): Path to the video file.
-        """
-
-        frames = self.open_video(video)
-        self.frames = self.frames_to_array(frames)
-
-        results = []
-
-
-
-    def frames_array_to_image(self, frames: List[np.ndarray]) -> List[str]:
-        """
-        Convert frames to images and save them.
-
-        Args:
-            frames (List[np.ndarray]): List of frames as numpy arrays.
-
-        Returns:
-            List[str]: List of paths to saved images.
-        """
-
-        image_paths = []
-        for i, frame in enumerate(frames):
-            image_path = f"{self.path}/frame_{i}.jpg"
-            cv2.imwrite(image_path, frame)
-            image_paths.append(image_path)
-
-        return image_paths
-        
-    def frames_to_array(self, frames: cv2.VideoCapture) -> List[np.ndarray]:
-        """
-        Convert frames to numpy arrays.
-    
-        Args:
-            frames (cv2.VideoCapture): OpenCV VideoCapture object.
-
-        Returns:
-            List[np.ndarray]: List of frames as numpy arrays.
-        """
-
-        frames = []
-        while frames.length < len(self.frames):
-            ret, frame = frames.read()
-            if ret:
-                frames.append(frame)
-            else:
-                break
-
-        return frames
-
-    def open_video(self, video: str) -> List[cv2.VideoCapture]:
-        """
-        Recevei video path and open it with opencv to get frames.
-
-        Args:
-            video (str): Path to the video file.
-
-        Returns:
-            List[np.ndarray]: List of frames as numpy arrays.
-        """
-
-        cap = cv2.VideoCapture(video)
-        frames = []
         while cap.isOpened():
             ret, frame = cap.read()
-            if ret:
-                frames.append(frame)
-            else:
+            if not ret:
                 break
 
-        cap.release()
-        cap.close()
+            if frame_id % self.frame_interval != 0:
+                frame_id += 1
+                continue
 
-        return frames
+            detections = self.detect_vehicles(frame)
+
+            if detections:
+                frame_name = f"frame_{self.frame_count}.jpg"
+                cv2.imwrite(os.path.join(self.frames_dir, frame_name), frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+                for det in detections:
+                    x1, y1, x2, y2 = det['bbox']
+                    label = det['type']
+
+                    cut_crop = frame[y1:y2, x1:x2]
+                    cut_name = f"cut_frame_{self.cut_frame_count}.jpg"
+                    cv2.imwrite(os.path.join(self.cuts_dir, cut_name), cut_crop, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+                    self.data.append({
+                        "ID_frame": self.frame_name,
+                        "ID_cut_frame": self.cut_name,
+                        "Type": label
+                    })
+
+                    self.cut_frame_count += 1
+
+                self.frame_count += 1
+
+            frame_id += 1
+
+        cap.release()
+        self.save_csv()
+
+    def detect_vehicles(self, frame: np.ndarray) -> List[Dict]:
+        results = self.vehicle_model(frame)
+        detections = []
+
+        h, w, _ = frame.shape
+        for r in results:
+            for box in r.boxes:
+                cls_id = int(box.cls)
+                label = self.vehicle_model.names[cls_id]
+
+                if label not in ['car', 'motorcycle', 'truck', 'bus']:
+                    continue
+
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                box_height = y2 - y1
+                box_area = (x2 - x1) * box_height
+                frame_area = w * h
+
+                if box_height > 0.2 * h or box_area > 0.05 * frame_area:
+                    detections.append({
+                        'bbox': [x1, y1, x2, y2],
+                        'type': label
+                    })
+
+        return detections
+
+    def save_csv(self):
+        df = pd.DataFrame(self.data)
+        df.to_csv(os.path.join(self.output_dir, "vehicles_info.csv"), index=False)
+
+processor = VehiclePlateProcessor(
+    video_path="/content/drive/MyDrive/MESTRADO/dataset_plates/SimPlay-Grand Village-Portaria-CAM6.mp4",
+    output_dir="/content/drive/MyDrive/MESTRADO/dataset_plates/results",
+    vehicle_model_path="yolov8n.pt",
+    frame_interval=5
+)
+processor.process_video()

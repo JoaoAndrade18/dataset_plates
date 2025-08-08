@@ -1,1 +1,7 @@
 videos/
+results/
+results2/
+.venv
+frames/
+__pycache__/
+original_plate_images
