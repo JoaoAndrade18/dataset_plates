@@ -6,3 +6,7 @@ frames/
 __pycache__/
 original_plate_images
 *.pt
+
+*png
+*jpg
+*txt
