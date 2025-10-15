@@ -6,7 +6,7 @@ frames/
 __pycache__/
 original_plate_images
 *.pt
-
+fastAlprService/
 *png
 *jpg
 *txt
