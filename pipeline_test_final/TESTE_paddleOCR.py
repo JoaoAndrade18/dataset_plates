@@ -6,13 +6,25 @@ import numpy as np
 from paddleocr import PaddleOCR
 from ultralytics import YOLO
 
-RESULTS_FILE = "resultPaddleOcr.csv" 
-IMAGE_PATH_DIR = "PODI-LPR-01/"
+RESULTS_FILE = "resultPaddleOcRODOSOL_motorcycles.csv" 
+IMAGE_PATH_DIR = "RodoSol-ALPR/images/motorcycles-br/"
 YOLO_MODEL_PATH = 'best_placa.pt'
 
 def clean_plate_text(text):
     """Removes spaces and hyphens, and converts to uppercase."""
     return ''.join(c for c in text.upper() if c.isalnum())
+
+def read_ground_truth(txt_path):
+    """Reads the .txt file and extracts the ground truth plate."""
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('plate:'):
+                    plate = line.split('plate:')[1].strip()
+                    return clean_plate_text(plate)
+    except Exception as e:
+        print(f"Error reading {txt_path}: {e}")
+    return None
 
 def rotate_image(image, angle):
     """Rotates an image by a given angle."""
@@ -44,18 +56,6 @@ def deskew(image):
     return rotate_image(image, angle)
 
 def preprocess_plate(img, use_erode=True, use_dilate=True):
-    # """Applies a series of pre-processing steps to the plate ROI."""
-    # img = deskew(img)
-    # if len(img.shape) == 3:
-    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # if use_erode:
-    #     kernel_rect = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    #     img = cv2.erode(img, kernel_rect, iterations=1)
-    # if use_dilate:
-    #     kernel_rect = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    #     img = cv2.dilate(img, kernel_rect, iterations=1)
-
     roi = cv2.resize(img, (240, 78))
     h, w = roi.shape[:2]
     roi = roi[h - 55:h, w - 225:w - 20]
@@ -68,7 +68,6 @@ def preprocess_plate(img, use_erode=True, use_dilate=True):
     erode = cv2.erode(thresh.copy(),kernel_rect,iterations=1)
     processed_image = cv2.dilate(erode.copy(),kernel_rect,iterations=1)
  
-    # return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     return cv2.cvtColor(processed_image, cv2.COLOR_GRAY2BGR)
 
 def corrige_placa(text):
@@ -109,12 +108,12 @@ ocr = PaddleOCR(
     use_doc_orientation_classify=False,
     device='cpu',
     lang='en',
-    # text_detection_model_dir=None,
-    # text_det_box_thresh=0.2,
-    # text_recognition_model_dir=None
 )
 yolo_model = YOLO(YOLO_MODEL_PATH).to(device=0)
-image_list = os.listdir(IMAGE_PATH_DIR)
+
+all_files = os.listdir(IMAGE_PATH_DIR)
+# Filtra apenas arquivos de imagem
+image_list = [f for f in all_files if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
 total = 0
 mediumTime = 0
@@ -130,11 +129,20 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
     writer.writeheader()
 
     for image_name in image_list:
-        if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+        # Obtém o nome base sem extensão
+        base_name = os.path.splitext(image_name)[0]
+        txt_name = base_name + '.txt'
+        
+        image_path = os.path.join(IMAGE_PATH_DIR, image_name)
+        txt_path = os.path.join(IMAGE_PATH_DIR, txt_name)
+        
+        # Lê o ground truth do arquivo .txt
+        ground_truth_plate = read_ground_truth(txt_path)
+        
+        if ground_truth_plate is None:
+            print(f"Ground truth not found for {image_name}, skipping...")
             continue
         
-        ground_truth_plate = image_name.split('_')[0].upper()
-        image_path = os.path.join(IMAGE_PATH_DIR, image_name)
         image = cv2.imread(image_path)
 
         if image is None:

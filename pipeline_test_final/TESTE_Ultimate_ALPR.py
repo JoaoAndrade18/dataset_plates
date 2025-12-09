@@ -4,8 +4,8 @@ import time
 import csv
 
 URL = "http://201.148.100.122:5000/recognizer-dataset"
-IMAGE_FOLDER = "PODI-LPR-01"
-RESULTS_FILE = "resultUltimateALPR.csv" 
+IMAGE_FOLDER = "RodoSol-ALPR/images/motorcycles-br/"
+RESULTS_FILE = "resultUltimateALPR_RODOSOL_motorcycles.csv" 
 FIELD_NAME = "image" 
 HEADERS = {
     "accept": "application/json"
@@ -20,8 +20,24 @@ sixCorrected = 0
 sixCorrectedFixed = 0   
 times = []
 
+def clean_plate_text(text):
+    """Remove caracteres não alfanuméricos e converte para maiúsculas."""
+    return ''.join(c for c in text.upper() if c.isalnum())
+
+def read_ground_truth(txt_path):
+    """Lê o arquivo .txt e extrai a placa ground truth."""
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('plate:'):
+                    plate = line.split('plate:')[1].strip()
+                    return clean_plate_text(plate)
+    except Exception as e:
+        print(f"Erro ao ler {txt_path}: {e}")
+    return None
+
 def corrige_placa(text):
-    text = ''.join(c for c in text.upper() if c.isalnum())
+    text = clean_plate_text(text)
     if len(text) < 7:
         return text, text
 
@@ -54,13 +70,28 @@ def check_match(pred, expected):
     correct = sum(p == t for p, t in zip(str(pred).upper(), str(expected).upper()))
     return correct
 
+all_files = os.listdir(IMAGE_FOLDER)
+# Filtra apenas arquivos de imagem
+image_list = [f for f in all_files if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
 with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
     fieldnames = ['image', 'true_plate', 'predicted_plate', 'q_char_corrected']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
     
-    for filename in os.listdir(IMAGE_FOLDER):
-        if not filename.lower().endswith((".jpg", ".png", ".jpeg")):
+    for filename in image_list:
+        # Obtém o nome base sem extensão
+        base_name = os.path.splitext(filename)[0]
+        txt_name = base_name + '.txt'
+        
+        filepath = os.path.join(IMAGE_FOLDER, filename)
+        txt_path = os.path.join(IMAGE_FOLDER, txt_name)
+        
+        # Lê o ground truth do arquivo .txt
+        expected = read_ground_truth(txt_path)
+        
+        if expected is None:
+            print(f"Ground truth não encontrado para {filename}, pulando...")
             continue
 
         plate = ""
@@ -68,8 +99,6 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
         prediction_adjusted_old = ""
         prediction_adjusted_new = ""
 
-        expected = filename[:7].upper() 
-        filepath = os.path.join(IMAGE_FOLDER, filename)
         total += 1
 
         with open(filepath, "rb") as f:

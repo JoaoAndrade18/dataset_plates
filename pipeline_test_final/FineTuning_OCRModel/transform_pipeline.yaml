@@ -1,0 +1,44 @@
+__version__: 2.0.4
+transform:
+  __class_fullname__: Compose
+  additional_targets: {}
+  bbox_params: null
+  is_check_shapes: true
+  keypoint_params: null
+  p: 1.0
+  transforms:
+  - __class_fullname__: RandomBrightnessContrast
+    brightness_by_max: true
+    brightness_limit:
+    - -0.1
+    - 0.1
+    contrast_limit:
+    - -0.1
+    - 0.1
+    ensure_safe_range: false
+    p: 1.0
+  - __class_fullname__: MotionBlur
+    allow_shifted: true
+    angle_range:
+    - 0.0
+    - 360.0
+    blur_limit:
+    - 3
+    - 5
+    direction_range:
+    - -1.0
+    - 1.0
+    p: 0.1
+  - __class_fullname__: CoarseDropout
+    fill: 0.0
+    fill_mask: null
+    hole_height_range:
+    - 0.1
+    - 0.2
+    hole_width_range:
+    - 0.1
+    - 0.2
+    num_holes_range:
+    - 1
+    - 2
+    p: 0.3

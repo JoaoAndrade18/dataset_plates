@@ -3,14 +3,28 @@ import csv
 from fast_alpr import ALPR
 from ultralytics import YOLO
 
-RESULTS_FILE = "resultFastAlpr.csv"
+from AppFastALPR import FastALPR
+
+RESULTS_FILE = "resultFastALPR_RODOSOL_MERCOSUL.csv"
 
 def clean_plate_text(text):
     """Remove caracteres não alfanuméricos e converte para maiúsculas."""
     return ''.join(c for c in text.upper() if c.isalnum())
 
+def read_ground_truth(txt_path):
+    """Lê o arquivo .txt e extrai a placa ground truth."""
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('plate:'):
+                    plate = line.split('plate:')[1].strip()
+                    return clean_plate_text(plate)
+    except Exception as e:
+        print(f"Erro ao ler {txt_path}: {e}")
+    return None
+
 def corrige_placa(text):
-    text = clean_plate_text(text) # 
+    text = clean_plate_text(text)
     if len(text) < 7:
         return text, text
     def is_letra(ch): return ch.isalpha()
@@ -45,7 +59,7 @@ def check_match(pred, expected):
     return correct
 
 alpr = ALPR(
-    detector_model="yolo-v9-t-384-license-plate-end2end",
+    detector_model="yolo-v9-s-608-license-plate-end2end",
     ocr_model="cct-xs-v1-global-model",
 )
 yolo_model = YOLO('best_placa.pt').to(device=0)
@@ -58,8 +72,10 @@ sixCorrected = 0
 sixCorrectedFixed = 0
 totalImagesInference = 0 
 
-path = "PODI-LPR-01/"
-images = os.listdir(path)
+path = "RodoSol-ALPR/images/cars-me/"
+all_files = os.listdir(path)
+
+images = [f for f in all_files if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
 with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
     fieldnames = ['image', 'true_plate', 'predicted_plate', 'q_char_corrected']
@@ -67,11 +83,18 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
     writer.writeheader()
     
     for img_name in images:
-        if not img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            continue
-
-        imageNameSevenFirstChars = img_name[:7].upper()
+        base_name = os.path.splitext(img_name)[0]
+        txt_name = base_name + '.txt'
+        
         image_path = os.path.join(path, img_name)
+        txt_path = os.path.join(path, txt_name)
+        
+        ground_truth_plate = read_ground_truth(txt_path)
+        
+        if ground_truth_plate is None:
+            print(f"Ground truth não encontrado para {img_name}, pulando...")
+            continue
+        
         start_time = time.time()
         
         alpr_results = alpr.predict(image_path)
@@ -101,9 +124,9 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
         
         corrected_old, corrected_new = corrige_placa(resultText_clear)
         
-        acertos_bruto = check_match(resultText_clear, imageNameSevenFirstChars)
-        acertos_corrigido_old = check_match(corrected_old, imageNameSevenFirstChars)
-        acertos_corrigido_new = check_match(corrected_new, imageNameSevenFirstChars)
+        acertos_bruto = check_match(resultText_clear, ground_truth_plate)
+        acertos_corrigido_old = check_match(corrected_old, ground_truth_plate)
+        acertos_corrigido_new = check_match(corrected_new, ground_truth_plate)
 
         if acertos_corrigido_new > acertos_corrigido_old:
             best_corrected_plate = corrected_new
@@ -122,7 +145,7 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
                 acertos = acertos_bruto 
             elif acertos_corrigido == 7:
                 sevenCorrectedFixed += 1
-                plate = best_corrected_plate # 
+                plate = best_corrected_plate
                 acertos = acertos_corrigido
             elif acertos_bruto == 6:
                 sixCorrected += 1
@@ -130,7 +153,7 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
                 acertos = acertos_bruto
             elif acertos_corrigido == 6:
                 sixCorrectedFixed += 1
-                plate = best_corrected_plate # 
+                plate = best_corrected_plate
                 acertos = acertos_corrigido
             else:
                 plate = resultText_clear
@@ -138,12 +161,12 @@ with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as csvfile:
         
         writer.writerow({
             'image': img_name,
-            'true_plate': imageNameSevenFirstChars,
+            'true_plate': ground_truth_plate,
             'predicted_plate': plate,
             'q_char_corrected': acertos,
         })
         
-        print(f"CORRETO: {imageNameSevenFirstChars} | PREDICT: {resultText_clear} | [ADJUSTED] PREDICT: {best_corrected_plate} | Acertos: {acertos}/{7}")
+        print(f"CORRETO: {ground_truth_plate} | PREDICT: {resultText_clear} | [ADJUSTED] PREDICT: {best_corrected_plate} | Acertos: {acertos}/{7}")
 
 print("\n------------------- Final Results ------------------")
 print("Total Images: ", total)
